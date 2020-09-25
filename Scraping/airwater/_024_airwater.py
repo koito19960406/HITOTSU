@@ -3,7 +3,7 @@
 
 # # Import Libraries
 
-# In[6]:
+# In[2]:
 
 
 from selenium import webdriver
@@ -15,37 +15,27 @@ import datetime
 import csv
 import openpyxl
 from openpyxl import Workbook
-import re
 
 
 # # Create Functions
 
-# ## Scrape info
-
-# In[9]:
+# In[3]:
 
 
-class Nipro:
+class AirWater:
     # prepare the input date
     def __init__(self, year, month, day):
-        input_year=str(year)
-        input_month=str(month)
-        input_day=str(day)
-        self.input_date=input_year+'年'+input_month+'月'+input_day+'日'
-
-        # modify month and day for output_date
-        output_year=str(year)
+        year=str(year)
         if month<10:
-            output_month='0'+str(month)
+            month='0'+str(month)
         else:
-            output_month=str(month)
+            month=str(month)
         if day<10:
-            output_day='0'+str(day)
+            day='0'+str(day)
         else:
-            output_day=str(day)
-        self.output_date=int(output_year+output_month+output_day)
-
-
+            day=str(day)
+        self.input_date=year+'年'+month+'月'+day+'日'
+        self.output_date=int(year+month+day)
 
     # scrape the info
     def scrape(self):
@@ -55,58 +45,48 @@ class Nipro:
         browser = webdriver.Chrome(chrome_options=options)
 
         # deal with the first "medical staff?" question
-        browser.get('http://med.nipro.co.jp/index')
+        browser.get('https://www.awi.co.jp/business/medical/news/2020/')
+
+        # wait for browser to open for 10 sec
         timeout = 10
         try:
             WebDriverWait(browser, timeout).until(
             EC.visibility_of_element_located(
-            (By.XPATH, '//*[@id="j_id0:j_id16"]/ul/li[1]/a')
+            (By.XPATH, '//*[@id="contentsSection"]/div/ul')
             )
             )
         except TimeoutException:
             print('Timed Out Waiting for page to load')
             browser.quit()
-        login_btn=browser.find_element_by_xpath('//*[@id="j_id0:j_id16"]/ul/li[1]/a')
-        login_btn.click()
-        browser.implicitly_wait(3)
-
-        # activate medical news button
-        activate_btn=browser.find_element_by_xpath('/html/body/div[1]/div[4]/div[1]/div[1]/div[2]/ul/li[2]/span')
-        browser.execute_script('arguments[0].click();', activate_btn)
 
         # Get info
         # Go to the list
-        date_list=browser.find_element_by_xpath('//*[@id="j_id0:j_id83"]/dl').find_elements_by_css_selector('dt')
-        news_list=browser.find_element_by_xpath('//*[@id="j_id0:j_id83"]/dl').find_elements_by_css_selector('dd')
-    
+        news_list=browser.find_element_by_xpath('//*[@id="contentsSection"]/div/ul').find_elements_by_css_selector('li')
         # Go through the list
         result=[]
-        date_count=0
-        for dates in date_list:
-            # Get URL and title if date == input date
-            dates_text=dates.text
-            date = re.search('\d{4}年\d{1,}月\d{1,}日', dates_text).group()
-            if date==self.input_date:
-
-                # Get link and title 
-                news_count=0
-                for news in news_list:
-                    if date_count==news_count:
-                        news_url=news.find_element_by_css_selector('a').get_attribute('href')
-                        news_title=news.find_element_by_tag_name('a').text
-                        news_category=dates.find_element_by_css_selector('span.ph_tag.category_another').text
-                        # If the title contains "新発売", them return 1 as new_product
-                        new_product_condition_1='新発売'
-                        if new_product_condition_1 in news_title:
-                            new_product=1
-                        else:
-                            new_product=0
-                        # Append the info to the list
-                        result.append([self.output_date,news_category,news_title,news_url,new_product])
-                        break
+        # Check if the news element is nth number, and if n is an odd number skip.
+        news_num=0
+        for news in news_list:
+            if news_num%2==0:
+                date = news.find_element_by_css_selector('div>p').text
+                # Get URL and title if date == input date
+                if date==self.input_date:
+                    # Get link and title
+                    news_url=news.find_element_by_css_selector('p>a').get_attribute('href')
+                    news_title=news.find_element_by_css_selector('p>a').text
+                    news_category=news.find_element_by_css_selector('div>ul>li').text
+                    # Check if it's info about new products
+                    new_product_condition_1='販売開始'
+                    new_product_condition_2='発売'
+                    if (new_product_condition_1 in news_title)or(new_product_condition_2 in news_title):
+                        new_product=1
                     else:
-                        news_count+=1
-                date_count+=1
+                        new_product=0
+                    # Append the info to the list
+                    result.append([self.output_date,news_category,news_title,news_url,new_product])
+
+            # update the news_num
+            news_num+=1
 
         # close the browser        
         browser.quit()
@@ -128,28 +108,28 @@ class Nipro:
         # get row number
         # try to open the csv file
         try:
-            with open('Nipro.csv') as csvfile:
+            with open('product_info.csv') as csvfile:
                 reader = csv.reader(csvfile)
                 # check if the title we are trying to add is already there    
                 for row in reader:
                     # the date is already there, dont add anything
-                    if row[0]==date:
+                    if (row[0]==date) and (row[4]==24):
                         return print('Already added to csv')
         # if there's no such file, create a new file 
         except FileNotFoundError:
-            with open('Nipro.csv','w') as csvfile:
+            with open('product_info.csv','w') as csvfile:
                 pass
         
         # add new data
-        with open('Nipro.csv', 'a') as csvfile:
+        with open('product_info.csv', 'a') as csvfile:
             writer = csv.writer(csvfile)
             for i in range(result_len):
                 writer.writerow([result[i][0], 
-                                '血液浄化', 
-                                '医療機器管理', 
+                                '手術室', 
+                                '高気圧酸素療法', 
                                 '',
-                                '',
-                                'ニプロ', 
+                                24,
+                                'エア・ウォーター', 
                                 result[i][1],
                                 result[i][2], 
                                 result[i][3], 
@@ -171,11 +151,11 @@ class Nipro:
 
         # try to open the workbook
         try:
-            wb = openpyxl.load_workbook('Nipro.xlsx')
+            wb = openpyxl.load_workbook('product_info.xlsx')
             ws = wb['Sheet1']
             for row in ws.iter_rows(values_only=True):
                 # the date is already there, dont add anything
-                if row[0]==date:
+                if (row[0]==date) and (row[4]==24):
                     return print('Already added to excel')
         # if we cannot open it, we create a new one
         except FileNotFoundError:
@@ -200,30 +180,28 @@ class Nipro:
         # can handle up to 3 news on the same day
         for i in range(result_len):
             ws.cell(row = last_row + i + 1, column = 1, value = result[i][0]) # 日付
-            ws.cell(row = last_row + i + 1, column = 2, value = '血液浄化') # カテゴリコード１
-            ws.cell(row = last_row + i + 1, column = 3, value = '医療機器管理') # カテゴリコード2
+            ws.cell(row = last_row + i + 1, column = 2, value = '手術室') # カテゴリコード１
+            ws.cell(row = last_row + i + 1, column = 3, value = '高気圧酸素療法') # カテゴリコード2
             ws.cell(row = last_row + i + 1, column = 4, value = '') # カテゴリコード3
-
-            # add メーカーコード
-
-            ws.cell(row = last_row + i + 1, column = 6, value = 'ニプロ') # メーカー名称
+            ws.cell(row = last_row + i + 1, column = 5, value = 24) # メーカーコード
+            ws.cell(row = last_row + i + 1, column = 6, value = 'エア・ウォーター') # メーカー名称
             ws.cell(row = last_row + i + 1, column = 7, value = result[i][1]) # 新着記事カテゴリ
             ws.cell(row = last_row + i + 1, column = 8, value = result[i][2]) # 新着記事タイトル
             ws.cell(row = last_row + i + 1, column = 9, value = result[i][3]) # 新着記事URL
             ws.cell(row = last_row + i + 1, column = 10, value = result[i][4]) # 新製品記事
 
-        wb.save('Nipro.xlsx')
+        wb.save('product_info.xlsx')
 
 
 # # Run the Function
 
-# In[10]:
+# In[4]:
 
 
 if __name__=='__main__':
     # set the beginning and the end of the dates to get info
-    start_date = datetime.date(2020, 8, 1)
-    end_date = datetime.date(2020, 8, 31)
+    start_date = datetime.date(2020, 8, 20)
+    end_date = datetime.date(2020, 8, 20)
     # interval is the interval between each loop (e.g., in this case, it's 1 day)
     interval = datetime.timedelta(days=1)
 
@@ -232,9 +210,9 @@ if __name__=='__main__':
         year=start_date.year
         month=start_date.month
         day=start_date.day
-        nipro=Nipro(year,month,day)
-        nipro.to_csv()
-        nipro.to_excel()
+        airwater=AirWater(year,month,day)
+        airwater.to_csv()
+        airwater.to_excel()
         start_date += interval
 
 

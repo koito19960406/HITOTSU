@@ -3,7 +3,7 @@
 
 # # Import Libraries
 
-# In[12]:
+# In[6]:
 
 
 from selenium import webdriver
@@ -15,20 +15,23 @@ import datetime
 import csv
 import openpyxl
 from openpyxl import Workbook
+import re
 
 
 # # Create Functions
 
-# In[13]:
+# ## Scrape info
+
+# In[9]:
 
 
-class Medtronic:
+class Nipro:
     # prepare the input date
     def __init__(self, year, month, day):
         input_year=str(year)
         input_month=str(month)
         input_day=str(day)
-        self.input_date=input_year+'/'+input_month+'/'+input_day
+        self.input_date=input_year+'年'+input_month+'月'+input_day+'日'
 
         # modify month and day for output_date
         output_year=str(year)
@@ -41,7 +44,9 @@ class Medtronic:
         else:
             output_day=str(day)
         self.output_date=int(output_year+output_month+output_day)
-    
+
+
+
     # scrape the info
     def scrape(self):
         #open chrome in incognito mode
@@ -49,45 +54,62 @@ class Medtronic:
         options.add_argument(' -- incognito')
         browser = webdriver.Chrome(chrome_options=options)
 
-        # Go to the website
-        browser.get('https://www.medtronic.com/jp-ja/about/news.html')
-
-        # wait for 10 seconds to load the website
+        # deal with the first "medical staff?" question
+        browser.get('http://med.nipro.co.jp/index')
         timeout = 10
         try:
             WebDriverWait(browser, timeout).until(
             EC.visibility_of_element_located(
-            (By.XPATH, '/html/body/div[2]/div[5]/div[3]/section/div[2]/div/ul')
+            (By.XPATH, '//*[@id="j_id0:j_id16"]/ul/li[1]/a')
             )
             )
         except TimeoutException:
             print('Timed Out Waiting for page to load')
             browser.quit()
+        login_btn=browser.find_element_by_xpath('//*[@id="j_id0:j_id16"]/ul/li[1]/a')
+        login_btn.click()
+        browser.implicitly_wait(3)
+
+        # activate medical news button
+        activate_btn=browser.find_element_by_xpath('/html/body/div[1]/div[4]/div[1]/div[1]/div[2]/ul/li[2]/span')
+        browser.execute_script('arguments[0].click();', activate_btn)
 
         # Get info
         # Go to the list
-        news_list=browser.find_element_by_xpath('/html/body/div[2]/div[5]/div[3]/section/div[2]/div/ul').find_elements_by_css_selector('li')
+        date_list=browser.find_element_by_xpath('//*[@id="j_id0:j_id83"]/dl').find_elements_by_css_selector('dt')
+        news_list=browser.find_element_by_xpath('//*[@id="j_id0:j_id83"]/dl').find_elements_by_css_selector('dd')
+    
         # Go through the list
         result=[]
-        for news in news_list:
-            date = news.find_element_by_css_selector('p>b').text
+        date_count=0
+        for dates in date_list:
             # Get URL and title if date == input date
+            dates_text=dates.text
+            date = re.search('\d{4}年\d{1,}月\d{1,}日', dates_text).group()
             if date==self.input_date:
-                # Get link and title
-                news_url=news.find_element_by_css_selector('p>a').get_attribute('href')
-                news_title=news.find_element_by_tag_name('p').text.split('\n')[1]
-                # If the title contains "販売"&"開始", them return 1 as new_product
-                new_product_condition_1='販売'
-                new_product_condition_2='開始'
-                if (new_product_condition_1 in news_title)&(new_product_condition_2 in news_title):
-                    new_product=1
-                else:
-                    new_product=0
-                # Append the info to the list
-                result.append([self.output_date,news_title,news_url,new_product])
-                
-        # close the browser
-        browser.quit()            
+
+                # Get link and title 
+                news_count=0
+                for news in news_list:
+                    if date_count==news_count:
+                        news_url=news.find_element_by_css_selector('a').get_attribute('href')
+                        news_title=news.find_element_by_tag_name('a').text
+                        news_category=dates.find_element_by_css_selector('span.ph_tag.category_another').text
+                        # If the title contains "新発売", them return 1 as new_product
+                        new_product_condition_1='新発売'
+                        if new_product_condition_1 in news_title:
+                            new_product=1
+                        else:
+                            new_product=0
+                        # Append the info to the list
+                        result.append([self.output_date,news_category,news_title,news_url,new_product])
+                        break
+                    else:
+                        news_count+=1
+                date_count+=1
+
+        # close the browser        
+        browser.quit()
         return result
 
     # store info into csv
@@ -106,32 +128,32 @@ class Medtronic:
         # get row number
         # try to open the csv file
         try:
-            with open('Medtronic.csv') as csvfile:
+            with open('product_info.csv') as csvfile:
                 reader = csv.reader(csvfile)
                 # check if the title we are trying to add is already there    
                 for row in reader:
                     # the date is already there, dont add anything
-                    if row[0]==date:
+                    if (row[0]==date) and (row[4]==10):
                         return print('Already added to csv')
         # if there's no such file, create a new file 
         except FileNotFoundError:
-            with open('Medtronic.csv','w') as csvfile:
+            with open('product_info.csv','w') as csvfile:
                 pass
         
         # add new data
-        with open('Medtronic.csv', 'a') as csvfile:
+        with open('product_info.csv', 'a') as csvfile:
             writer = csv.writer(csvfile)
             for i in range(result_len):
                 writer.writerow([result[i][0], 
-                                '心臓カテーテル', 
-                                '不整脈', 
-                                '手術室',
+                                '血液浄化', 
+                                '医療機器管理', 
                                 '',
-                                '日本メドトロニック', 
-                                '',
-                                result[i][1], 
+                                10,
+                                'ニプロ', 
+                                result[i][1],
                                 result[i][2], 
-                                result[i][3]])
+                                result[i][3], 
+                                result[i][4]])
 
     # store info into excel
     def to_excel(self):
@@ -149,11 +171,11 @@ class Medtronic:
 
         # try to open the workbook
         try:
-            wb = openpyxl.load_workbook('Medtronic.xlsx')
+            wb = openpyxl.load_workbook('product_info.xlsx')
             ws = wb['Sheet1']
             for row in ws.iter_rows(values_only=True):
                 # the date is already there, dont add anything
-                if row[0]==date:
+                if (row[0]==date) and (row[4]==10):
                     return print('Already added to excel')
         # if we cannot open it, we create a new one
         except FileNotFoundError:
@@ -178,26 +200,22 @@ class Medtronic:
         # can handle up to 3 news on the same day
         for i in range(result_len):
             ws.cell(row = last_row + i + 1, column = 1, value = result[i][0]) # 日付
-            ws.cell(row = last_row + i + 1, column = 2, value = '心臓カテーテル') # カテゴリコード１
-            ws.cell(row = last_row + i + 1, column = 3, value = '不整脈') # カテゴリコード2
-            ws.cell(row = last_row + i + 1, column = 4, value = '手術室') # カテゴリコード3
+            ws.cell(row = last_row + i + 1, column = 2, value = '血液浄化') # カテゴリコード１
+            ws.cell(row = last_row + i + 1, column = 3, value = '医療機器管理') # カテゴリコード2
+            ws.cell(row = last_row + i + 1, column = 4, value = '') # カテゴリコード3
+            ws.cell(row = last_row + i + 1, column = 5, value = 10) # メーカーコード
+            ws.cell(row = last_row + i + 1, column = 6, value = 'ニプロ') # メーカー名称
+            ws.cell(row = last_row + i + 1, column = 7, value = result[i][1]) # 新着記事カテゴリ
+            ws.cell(row = last_row + i + 1, column = 8, value = result[i][2]) # 新着記事タイトル
+            ws.cell(row = last_row + i + 1, column = 9, value = result[i][3]) # 新着記事URL
+            ws.cell(row = last_row + i + 1, column = 10, value = result[i][4]) # 新製品記事
 
-            # add メーカーコード
-
-            ws.cell(row = last_row + i + 1, column = 6, value = '日本メドトロニック') # メーカー名称
-
-            # add 新着記事カテゴリ
-            
-            ws.cell(row = last_row + i + 1, column = 8, value = result[i][1]) # 新着記事タイトル
-            ws.cell(row = last_row + i + 1, column = 9, value = result[i][2]) # 新着記事URL
-            ws.cell(row = last_row + i + 1, column = 10, value = result[i][3]) # 新製品記事
-
-        wb.save('Medtronic.xlsx')
+        wb.save('product_info.xlsx')
 
 
-# # Run the Functions
+# # Run the Function
 
-# In[14]:
+# In[10]:
 
 
 if __name__=='__main__':
@@ -212,9 +230,9 @@ if __name__=='__main__':
         year=start_date.year
         month=start_date.month
         day=start_date.day
-        medtronic=Medtronic(year,month,day)
-        medtronic.to_csv()
-        medtronic.to_excel()
+        nipro=Nipro(year,month,day)
+        nipro.to_csv()
+        nipro.to_excel()
         start_date += interval
 
 

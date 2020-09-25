@@ -3,7 +3,7 @@
 
 # # Import Libraries
 
-# In[1]:
+# In[10]:
 
 
 from selenium import webdriver
@@ -19,10 +19,10 @@ from openpyxl import Workbook
 
 # # Create Functions
 
-# In[17]:
+# In[11]:
 
 
-class IMI:
+class Nihonkoden:
     # prepare the input date
     def __init__(self, year, month, day):
         year=str(year)
@@ -34,9 +34,9 @@ class IMI:
             day='0'+str(day)
         else:
             day=str(day)
-        self.input_date=year+'/'+month+'/'+day
+        self.input_date=year+'年'+month+'月'+day+'日'
         self.output_date=int(year+month+day)
-
+    
     # scrape the info
     def scrape(self):
         #open chrome in incognito mode
@@ -45,40 +45,40 @@ class IMI:
         browser = webdriver.Chrome(chrome_options=options)
 
         # deal with the first "medical staff?" question
-        browser.get('https://www.imimed.co.jp/')
-
-        # wait for browser to open for 10 sec
+        browser.get('https://www.nihonkohden.co.jp/iryo/index.html?URL=/iryo/index2.html')
         timeout = 10
         try:
             WebDriverWait(browser, timeout).until(
             EC.visibility_of_element_located(
-            (By.XPATH, '//*[@id="info_list"]/div[1]/ul')
+            (By.XPATH, '//*[@id="pagetop"]/div[4]/div/div/div/div/div/div/div/div[2]/a[1]')
             )
             )
         except TimeoutException:
             print('Timed Out Waiting for page to load')
             browser.quit()
 
+        # Click the yes button
+        login_btn=browser.find_element_by_xpath('//*[@id="pagetop"]/div[4]/div/div/div/div/div/div/div/div[2]/a[1]')
+        login_btn.click()
+        browser.implicitly_wait(3)
+
         # Get info
-        # Go to the list
-        news_list=browser.find_element_by_xpath('//*[@id="info_list"]/div[1]/ul').find_elements_by_css_selector('li')
+        # Go to production info section
+        news_list=browser.find_element_by_class_name('infoset').find_elements_by_css_selector('tr')
         # Go through the list
         result=[]
         for news in news_list:
-            date = news.find_element_by_css_selector('span').text
-            # Get URL and title if date == input date
+            date=news.find_element_by_css_selector('th').text
             if date==self.input_date:
-                # Get link and title
                 news_url=news.find_element_by_css_selector('a').get_attribute('href')
                 news_title=news.find_element_by_css_selector('a').text
-                news_category=news.find_element_by_css_selector('i').text
-                # Check if it's info about new products
-                if news_category == '商品情報':
+                # If the title contains "新商品", them return 1 as new_product
+                new_product_condition_1='新製品'
+                if new_product_condition_1 in news_title:
                     new_product=1
                 else:
                     new_product=0
-                # Append the info to the list
-                result.append([self.output_date,news_category,news_title,news_url,new_product])
+                result.append([self.output_date,news_title,news_url,new_product])
 
         # close the browser        
         browser.quit()
@@ -100,32 +100,32 @@ class IMI:
         # get row number
         # try to open the csv file
         try:
-            with open('IMI.csv') as csvfile:
+            with open('product_info.csv') as csvfile:
                 reader = csv.reader(csvfile)
                 # check if the title we are trying to add is already there    
                 for row in reader:
                     # the date is already there, dont add anything
-                    if row[0]==date:
+                    if (row[0]==date) and (row[4]==3):
                         return print('Already added to csv')
         # if there's no such file, create a new file 
         except FileNotFoundError:
-            with open('IMI.csv','w') as csvfile:
+            with open('product_info.csv','w') as csvfile:
                 pass
         
         # add new data
-        with open('IMI.csv', 'a') as csvfile:
+        with open('product_info.csv', 'a') as csvfile:
             writer = csv.writer(csvfile)
             for i in range(result_len):
                 writer.writerow([result[i][0], 
-                                '人工呼吸器', 
                                 '手術室', 
-                                '医療機器管理',
+                                '医療機器管理', 
+                                '人工呼吸器',
+                                3,
+                                '日本光電工業', 
                                 '',
-                                'アイ・エム・アイ', 
-                                result[i][1],
+                                result[i][1], 
                                 result[i][2], 
-                                result[i][3], 
-                                result[i][4]])
+                                result[i][3]])
 
     # store info into excel
     def to_excel(self):
@@ -143,11 +143,11 @@ class IMI:
 
         # try to open the workbook
         try:
-            wb = openpyxl.load_workbook('IMI.xlsx')
+            wb = openpyxl.load_workbook('product_info.xlsx')
             ws = wb['Sheet1']
             for row in ws.iter_rows(values_only=True):
                 # the date is already there, dont add anything
-                if row[0]==date:
+                if (row[0]==date) and (row[4]==3):
                     return print('Already added to excel')
         # if we cannot open it, we create a new one
         except FileNotFoundError:
@@ -172,24 +172,24 @@ class IMI:
         # can handle up to 3 news on the same day
         for i in range(result_len):
             ws.cell(row = last_row + i + 1, column = 1, value = result[i][0]) # 日付
-            ws.cell(row = last_row + i + 1, column = 2, value = '人工呼吸器') # カテゴリコード１
-            ws.cell(row = last_row + i + 1, column = 3, value = '手術室') # カテゴリコード2
-            ws.cell(row = last_row + i + 1, column = 4, value = '医療機器管理') # カテゴリコード3
+            ws.cell(row = last_row + i + 1, column = 2, value = '手術室') # カテゴリコード１
+            ws.cell(row = last_row + i + 1, column = 3, value = '医療機器管理') # カテゴリコード2
+            ws.cell(row = last_row + i + 1, column = 4, value = '人工呼吸器') # カテゴリコード3
+            ws.cell(row = last_row + i + 1, column = 5, value = 3) # メーカーコード
+            ws.cell(row = last_row + i + 1, column = 6, value = '日本光電工業') # メーカー名称
 
-            # add メーカーコード
+            # add 新着記事カテゴリ
+            
+            ws.cell(row = last_row + i + 1, column = 8, value = result[i][1]) # 新着記事タイトル
+            ws.cell(row = last_row + i + 1, column = 9, value = result[i][2]) # 新着記事URL
+            ws.cell(row = last_row + i + 1, column = 10, value = result[i][3]) # 新製品記事
 
-            ws.cell(row = last_row + i + 1, column = 6, value = 'アイ・エム・アイ') # メーカー名称
-            ws.cell(row = last_row + i + 1, column = 7, value = result[i][1]) # 新着記事カテゴリ
-            ws.cell(row = last_row + i + 1, column = 8, value = result[i][2]) # 新着記事タイトル
-            ws.cell(row = last_row + i + 1, column = 9, value = result[i][3]) # 新着記事URL
-            ws.cell(row = last_row + i + 1, column = 10, value = result[i][4]) # 新製品記事
-
-        wb.save('IMI.xlsx')
+        wb.save('product_info.xlsx')
 
 
 # # Run the Function
 
-# In[19]:
+# In[12]:
 
 
 if __name__=='__main__':
@@ -204,16 +204,10 @@ if __name__=='__main__':
         year=start_date.year
         month=start_date.month
         day=start_date.day
-        imi=IMI(year,month,day)
-        imi.to_csv()
-        imi.to_excel()
+        nihonkoden=Nihonkoden(year,month,day)
+        nihonkoden.to_csv()
+        nihonkoden.to_excel()
         start_date += interval
-
-
-# In[ ]:
-
-
-
 
 
 # In[ ]:
