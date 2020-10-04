@@ -144,7 +144,7 @@ class Izumi:
                 reader = csv.reader(csvfile)
                 for row in reader:
                     # the date is already there, dont add anything
-                    if (row[0]==self.output_date) and (row[4]=='008'):
+                    if (row[0]==self.output_date) and (row[4]==5):
                         return print('Already added to csv')
 
         # if there's no such file, create a new file 
